@@ -953,32 +953,30 @@ function App() {
     setToast('CSV export downloaded')
   }
   async function deleteAll() {
-    if (!confirm('Delete all activity and spending limits? This cannot be undone.')) return
+    if (!confirm('Delete all PlayLedger activity, ticket images, and spending limits? Your shared login will remain available. This cannot be undone.')) return
     try {
       if (supabase && user) {
+        while (true) {
+          const { data: images, error: listError } = await supabase.storage
+            .from('ticket-images')
+            .list(user.id, { limit: 100 })
+          if (listError) throw listError
+          if (!images?.length) break
+          const { error: removeError } = await supabase.storage
+            .from('ticket-images')
+            .remove(images.map((image) => `${user.id}/${image.name}`))
+          if (removeError) throw removeError
+        }
         const { error: a } = await supabase.from('activities').delete().eq('user_id', user.id)
         const { error: s } = await supabase.from('user_settings').delete().eq('user_id', user.id)
         if (a || s) throw a || s
       }
       setItems([])
       setLimits({ weekly_cents: null, monthly_cents: null })
-      setToast('Your ledger was cleared')
+      setToast('Your PlayLedger data was deleted')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not delete data.')
     }
-  }
-  async function deleteAccount() {
-    if (!supabase || !user) return
-    if (!confirm('Permanently delete your PlayLedger account and all its data? This cannot be undone.'))
-      return
-    const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' })
-    if (error) {
-      setError(error.message)
-      return
-    }
-    await supabase.auth.signOut()
-    setUser(null)
-    setToast('Account deleted')
   }
   async function signOut() {
     await supabase?.auth.signOut()
@@ -1209,7 +1207,6 @@ function App() {
                   total={allSummary.count}
                   onExport={exportCsv}
                   onDeleteAll={deleteAll}
-                  onDeleteAccount={deleteAccount}
                   onSignOut={signOut}
                 />
               )}
@@ -2484,7 +2481,6 @@ function Settings({
   total,
   onExport,
   onDeleteAll,
-  onDeleteAccount,
   onSignOut,
 }: {
   email?: string
@@ -2492,7 +2488,6 @@ function Settings({
   total: number
   onExport: () => void
   onDeleteAll: () => void
-  onDeleteAccount: () => void
   onSignOut: () => void
 }) {
   return (
@@ -2557,24 +2552,13 @@ function Settings({
         </div>
         <div className="setting-row">
           <div>
-            <strong>Clear activity</strong>
-            <p>Permanently remove all records and spending limits.</p>
+            <strong>Delete PlayLedger data</strong>
+            <p>Permanently remove all records, ticket images, and spending limits. Your shared login stays available.</p>
           </div>
           <Button variant="danger" onClick={onDeleteAll}>
             <Trash2 size={16} /> Delete data
           </Button>
         </div>
-        {cloud && (
-          <div className="setting-row">
-            <div>
-              <strong>Delete account</strong>
-              <p>Permanently remove your account and associated data.</p>
-            </div>
-            <Button variant="danger" onClick={onDeleteAccount}>
-              <Trash2 size={16} /> Delete account
-            </Button>
-          </div>
-        )}
       </section>
       <div className="settings-note">
         <CircleHelp size={17} />

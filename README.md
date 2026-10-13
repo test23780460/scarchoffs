@@ -13,15 +13,15 @@ npm ci
 npm run dev
 ```
 
-Without environment variables, the app runs in a **clearly labeled local preview mode** and stores entries in this browser's local storage. This is useful for interface review, but it is not cloud storage or private account authentication. Ticket image upload and account deletion require Supabase.
+Without environment variables, the app runs in a **clearly labeled local preview mode** and stores entries in this browser's local storage. This is useful for interface review, but it is not cloud storage or private account authentication. Ticket image upload requires Supabase.
 
 ## Connect Supabase
 
-1. Create a Supabase project.
-2. Apply `supabase/migrations/20261012000000_initial.sql` through the Supabase SQL editor or CLI.
-3. Deploy `supabase/functions/delete-account` as an Edge Function with JWT verification enabled. The function uses Supabase's managed `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` server-side variables. Never place the service role key in the frontend.
-4. Copy `.env.example` to `.env.local`, set the project URL and public anon key, and restart the dev server.
-5. In Supabase Auth URL configuration, add the local development URL and `https://test23780460.github.io/scarchoffs/` as allowed redirect URLs. Configure your email provider and password reset template.
+The deployed site uses the existing **NorthStar** project. The PlayLedger SQL migration has been applied there; its existing `gambling_entries` table and `delete-account` function were left intact.
+
+1. For another project, apply `supabase/migrations/20261012000000_initial.sql` through the Supabase SQL editor or CLI.
+2. Copy `.env.example` to `.env.local`, set the project URL and public publishable or anon key, and restart the dev server.
+3. In Supabase Auth URL configuration, add the local development URL and `https://test23780460.github.io/scarchoffs/` as allowed redirect URLs. Configure your email provider and password reset template.
 
 Row Level Security policies restrict activities, settings, and ticket images to their owner. The site uses Supabase's public anon key; access is controlled by user JWTs and RLS.
 
@@ -36,4 +36,4 @@ npm test
 npm run build
 ```
 
-CSV export includes all records and financial amounts in integer cents. Account deletion calls the authenticated Edge Function, removes private ticket images, and deletes the Auth user, cascading to records and settings.
+CSV export includes all records and financial amounts in integer cents. The Settings deletion action removes only PlayLedger records, ticket images, and spending limits. It keeps the shared NorthStar Auth user and all other application data.
