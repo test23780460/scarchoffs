@@ -52,4 +52,7 @@ describe('financial calculations', () => {
   it('neutralizes spreadsheet formulas in exports', () => {
     expect(csv([{ ...activity('a', 1000, 0), notes: '=1+1' }])).toContain('"\'=1+1"')
   })
+  it('reserves pending status for other gambling', () => {
+    expect(activitySchema.safeParse({ ...activity('a', 1000, 0), status: 'pending' }).success).toBe(false)
+  })
 })

@@ -48,6 +48,10 @@ export const activitySchema = z
     (a) => a.kind !== 'other' || !/\b(deposit|withdrawal|transfer)\b/i.test(`${a.name} ${a.category}`),
     { message: 'Record wagers and payouts, not deposits, withdrawals, or transfers.', path: ['name'] },
   )
+  .refine((a) => a.status === 'settled' || a.kind === 'other', {
+    message: 'Pending status is available for other gambling only.',
+    path: ['status'],
+  })
 
 export const cents = (value: string | number) => Math.round(Number(value || 0) * 100)
 export const money = (value: number, digits = 2) =>

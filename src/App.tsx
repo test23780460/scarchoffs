@@ -537,8 +537,19 @@ function EntryDialog({
                   className={draft.kind === k ? 'active' : ''}
                   key={k}
                   onClick={() => {
-                    set('kind', k)
-                    set('category', blank(k).category)
+                    setDraft((d) =>
+                      d.kind === k
+                        ? d
+                        : {
+                            ...d,
+                            kind: k,
+                            category: blank(k).category,
+                            status: 'settled',
+                            quantity: 1,
+                            duration_minutes: k === 'game' ? d.duration_minutes : null,
+                            image_path: k === 'scratch' ? d.image_path : null,
+                          },
+                    )
                   }}
                 >
                   {kindMeta[k].label}
