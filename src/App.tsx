@@ -602,7 +602,7 @@ function EntryDialog({
                 </span>
               </label>
               <label>
-                Gross payout
+                Gross payout (if any)
                 <span className="money-input">
                   <b>$</b>
                   <input
@@ -612,7 +612,7 @@ function EntryDialog({
                     step="0.01"
                     value={draft.payout_cents / 100 || ''}
                     onChange={(e) => set('payout_cents', cents(e.target.value))}
-                    required
+                    placeholder="0.00"
                   />
                 </span>
               </label>
