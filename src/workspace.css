@@ -2691,6 +2691,47 @@ kbd {
     box-shadow: 0 -10px 18px #21241e;
   }
 }
+@media (min-width: 1101px) and (max-height: 800px) {
+  .topbar {
+    height: 64px;
+  }
+  .content {
+    padding-top: 25px;
+  }
+  .page-heading {
+    margin-bottom: 20px;
+  }
+  .page-heading .eyebrow {
+    display: block;
+    line-height: 1;
+  }
+  .result-intro {
+    padding: 16px 0 18px;
+  }
+  .result-chart .chart-wrap,
+  .result-chart .chart-empty {
+    height: 200px !important;
+  }
+  .activity-mix {
+    padding: 20px;
+  }
+  .activity-mix .section-head {
+    margin-bottom: 14px;
+  }
+  .mix-total {
+    font-size: 29px;
+    margin: 0 0 15px;
+  }
+  .mix-stacked {
+    margin-bottom: 13px;
+  }
+  .mix-row {
+    padding: 12px 0;
+  }
+  .mix-list {
+    margin-bottom: 14px;
+  }
+}
 @media (max-width: 650px) {
   .cost-with-quantity {
     grid-template-columns: minmax(0, 1fr) 58px;
