@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
@@ -10,6 +10,7 @@ import {
   Cell,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,6 +24,8 @@ import {
   BarChart3,
   CalendarDays,
   Check,
+  CircleMinus,
+  Coins,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +35,8 @@ import {
   Gamepad2,
   Goal,
   LayoutDashboard,
+  LayoutGrid,
+  List,
   LockKeyhole,
   LogOut,
   Menu,
@@ -59,6 +64,7 @@ import {
   net,
   periodStart,
   prettyDate,
+  previousComparableRange,
   realized,
   signedMoney,
   spending,
@@ -68,6 +74,7 @@ import {
 } from './lib'
 import type { Activity, Kind, Limits } from './lib'
 import { Button } from './components/ui/button'
+import { MoneyInput } from './components/MoneyInput'
 
 type Page = 'overview' | 'scratch' | 'game' | 'other' | 'history' | 'analytics' | 'limits' | 'settings'
 type Period = 'week' | 'month' | 'year' | 'all' | 'custom'
@@ -105,9 +112,9 @@ const kindMeta: Record<Kind, { label: string; icon: LucideIcon; className: strin
 }
 const sectionCopy: Record<Page, { eyebrow: string; title: string; description: string }> = {
   overview: {
-    eyebrow: 'YOUR FINANCIAL PICTURE',
-    title: 'Overview',
-    description: 'A clear view of what you spent, what came back, and the difference.',
+    eyebrow: 'YOUR PERSONAL LEDGER',
+    title: 'Your play, in perspective.',
+    description: 'Every ticket, every session. All of your numbers in one place.',
   },
   scratch: {
     eyebrow: 'TICKET LEDGER',
@@ -152,8 +159,8 @@ function Brand({ compact = false }: { compact?: boolean }) {
       </div>
       {!compact && (
         <div className="brand-word">
-          play<span>ledger</span>
-          <small>YOUR PLAY. YOUR NUMBERS.</small>
+          Play<span>Ledger</span>
+          <small>YOUR PERSONAL LEDGER</small>
         </div>
       )}
     </div>
@@ -174,6 +181,43 @@ function Delta({ value, large = false }: { value: number; large?: boolean }) {
     >
       {signedMoney(value)}
     </span>
+  )
+}
+function Outcome({ activity }: { activity: Activity }) {
+  const result =
+    activity.status === 'pending'
+      ? 'Pending'
+      : activity.payout_cents === 0
+        ? activity.kind === 'scratch'
+          ? 'No prize'
+          : 'No payout'
+        : net(activity) > 0
+          ? 'Net gain'
+          : net(activity) === 0
+            ? 'Break even'
+            : 'Net loss'
+  const tone =
+    activity.status === 'pending'
+      ? 'pending'
+      : net(activity) > 0
+        ? 'gain'
+        : net(activity) < 0
+          ? 'loss'
+          : 'even'
+  return (
+    <span className={`outcome ${tone}`}>
+      <i />
+      {result}
+    </span>
+  )
+}
+function ActivityResult({ activity }: { activity: Activity }) {
+  return activity.status === 'pending' ? (
+    <span className="pending-result" aria-label="Pending result">
+      —
+    </span>
+  ) : (
+    <Delta value={net(activity)} />
   )
 }
 function Empty({
@@ -231,7 +275,7 @@ function ChartTooltip({
       <small>{label && /^\d{4}-/.test(label) ? prettyDate(label) : label}</small>
       {payload.map((p, i) => (
         <div key={i}>
-          <i style={{ background: p.color || '#55d6b1' }} />
+          <i style={{ background: p.color || '#c3e88d' }} />
           {p.name}
           <strong>{mode === 'money' ? money(p.value) : p.value}</strong>
         </div>
@@ -240,33 +284,37 @@ function ChartTooltip({
   )
 }
 function PerformanceChart({ items, height = 270 }: { items: Activity[]; height?: number }) {
+  const gradientId = useId().replaceAll(':', '')
   const points = cumulative(items)
   if (!points.length)
     return (
-      <div className="chart-empty">
+      <div className="chart-empty" style={{ height }}>
         <div className="chart-empty-line" />
-        <span>Your trend begins with your first settled entry.</span>
+        <div className="chart-empty-message">
+          <BarChart3 size={24} strokeWidth={1.5} />
+          <strong>Your story starts with one entry</strong>
+          <span>Record an activity to see your results take shape.</span>
+        </div>
       </div>
     )
   const startDate = new Date(`${points[0].date}T12:00:00`)
   startDate.setDate(startDate.getDate() - 1)
-  const data =
-    points.length === 1 ? [{ date: localDate(startDate), balance: 0, name: 'Start' }, ...points] : points
+  const data = [{ date: localDate(startDate), balance: 0, name: 'Start' }, ...points]
   const negative = data[data.length - 1].balance < 0
   return (
     <div style={{ height }} className="chart-wrap">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 13, right: 9, left: -7, bottom: 0 }}>
           <defs>
-            <linearGradient id="balance-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={negative ? '#f07882' : '#55d6b1'} stopOpacity="0.19" />
-              <stop offset="100%" stopColor={negative ? '#f07882' : '#55d6b1'} stopOpacity="0" />
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={negative ? '#ed948b' : '#c3e88d'} stopOpacity="0.19" />
+              <stop offset="100%" stopColor={negative ? '#ed948b' : '#c3e88d'} stopOpacity="0" />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="#28333f" strokeDasharray="3 6" vertical={false} />
+          <CartesianGrid stroke="#33382f" strokeDasharray="3 6" vertical={false} />
           <XAxis
             dataKey="date"
-            stroke="#7e8d9e"
+            stroke="#89937f"
             tickLine={false}
             axisLine={false}
             fontSize={11}
@@ -276,32 +324,25 @@ function PerformanceChart({ items, height = 270 }: { items: Activity[]; height?:
             }
           />
           <YAxis
-            stroke="#7e8d9e"
+            domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(0, max)]}
+            stroke="#89937f"
             tickLine={false}
             axisLine={false}
             fontSize={11}
             tickFormatter={(v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v / 100).toFixed(0)}`}
           />
-          <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#738e9b', strokeDasharray: '3 4' }} />
+          <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#8d9d7d', strokeDasharray: '3 4' }} />
           <Area
             type="monotone"
             dataKey="balance"
             name="Net result"
-            stroke={negative ? '#f07882' : '#55d6b1'}
+            stroke={negative ? '#ed948b' : '#c3e88d'}
             strokeWidth={2.5}
-            fill="url(#balance-fill)"
+            fill={`url(#${gradientId})`}
             dot={false}
-            activeDot={{ r: 5, fill: negative ? '#f07882' : '#55d6b1', stroke: '#111820', strokeWidth: 3 }}
+            activeDot={{ r: 5, fill: negative ? '#ed948b' : '#c3e88d', stroke: '#191e16', strokeWidth: 3 }}
           />
-          <Line
-            type="linear"
-            dataKey={() => 0}
-            stroke="#667586"
-            strokeDasharray="4 5"
-            dot={false}
-            activeDot={false}
-            legendType="none"
-          />
+          <ReferenceLine y={0} stroke="#69746b" strokeDasharray="4 5" />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -321,11 +362,17 @@ function Auth({ onReady, recovery = false }: { onReady: () => void; recovery?: b
     setMessage('')
     try {
       if (mode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.href })
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${location.origin}${location.pathname}`,
+        })
         if (error) throw error
         setMessage('Check your email for a reset link.')
       } else if (mode === 'register') {
-        const { error } = await supabase.auth.signUp({ email, password })
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${location.origin}${location.pathname}` },
+        })
         if (error) throw error
         setMessage('Check your email to confirm your account, then sign in.')
       } else if (mode === 'update') {
@@ -460,13 +507,18 @@ function EntryDialog({
   initial,
   defaultKind,
   onSave,
+  suggestions,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   initial: Activity | null
   defaultKind: Kind
   onSave: (draft: Draft, id?: string, file?: File) => Promise<void>
+  suggestions: Activity[]
 }) {
+  const nameRef = useRef<HTMLInputElement>(null)
+  const [payoutMode, setPayoutMode] = useState<'none' | 'payout'>('none')
+  const [notice, setNotice] = useState('')
   const [draft, setDraft] = useState<Draft>(blank(defaultKind))
   const [detailed, setDetailed] = useState(false)
   const [file, setFile] = useState<File | undefined>()
@@ -476,7 +528,17 @@ function EntryDialog({
   useEffect(() => {
     if (open) {
       setDraft(initial ? { ...initial } : blank(defaultKind))
-      setDetailed(Boolean(initial))
+      setDetailed(
+        Boolean(
+          initial?.notes ||
+          initial?.fees_cents ||
+          initial?.image_path ||
+          initial?.location ||
+          initial?.duration_minutes,
+        ),
+      )
+      setPayoutMode(initial?.payout_cents ? 'payout' : 'none')
+      setNotice('')
       setFile(undefined)
       setError('')
     }
@@ -498,6 +560,7 @@ function EntryDialog({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }))
   async function submit(e: FormEvent) {
     e.preventDefault()
+    const addAnother = (e.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'another'
     const result = activitySchema.safeParse(draft)
     if (!result.success) {
       setError(result.error.issues[0]?.message || 'Check your entry.')
@@ -507,7 +570,14 @@ function EntryDialog({
     setError('')
     try {
       await onSave(result.data, initial?.id, file)
-      onOpenChange(false)
+      if (addAnother && !initial) {
+        setDraft({ ...blank(draft.kind), occurred_on: draft.occurred_on })
+        setPayoutMode('none')
+        setFile(undefined)
+        setDetailed(false)
+        setNotice(`${draft.name} saved. Ready for your next entry.`)
+        nameRef.current?.focus()
+      } else onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save this entry.')
     } finally {
@@ -523,7 +593,7 @@ function EntryDialog({
             <div>
               <span className="eyebrow">{initial ? 'UPDATE RECORD' : 'NEW RECORD'}</span>
               <Dialog.Title>{initial ? 'Edit activity' : 'Add activity'}</Dialog.Title>
-              <Dialog.Description>Record the amount spent and the gross payout received.</Dialog.Description>
+              <Dialog.Description>A quick record today. A clearer picture over time.</Dialog.Description>
             </div>
             <Dialog.Close className="icon-button" aria-label="Close">
               <X size={19} />
@@ -536,7 +606,9 @@ function EntryDialog({
                   type="button"
                   className={draft.kind === k ? 'active' : ''}
                   key={k}
+                  aria-pressed={draft.kind === k}
                   onClick={() => {
+                    setPayoutMode('none')
                     setDraft((d) =>
                       d.kind === k
                         ? d
@@ -545,6 +617,7 @@ function EntryDialog({
                             kind: k,
                             category: blank(k).category,
                             status: 'settled',
+                            payout_cents: 0,
                             quantity: 1,
                             duration_minutes: k === 'game' ? d.duration_minutes : null,
                             image_path: k === 'scratch' ? d.image_path : null,
@@ -552,20 +625,39 @@ function EntryDialog({
                     )
                   }}
                 >
+                  {k === 'scratch' ? (
+                    <Ticket size={16} />
+                  ) : k === 'game' ? (
+                    <Gamepad2 size={16} />
+                  ) : (
+                    <WalletCards size={16} />
+                  )}{' '}
                   {kindMeta[k].label}
                 </button>
               ))}
             </div>
+            {notice && (
+              <div className="entry-notice" role="status">
+                <Check size={16} />
+                {notice}
+              </div>
+            )}
             <div className="form-grid">
-              <label className="span-2">
+              <label className={draft.kind === 'scratch' ? '' : 'span-2'}>
                 {draft.kind === 'scratch'
                   ? 'Ticket name'
                   : draft.kind === 'game'
                     ? 'Game name'
                     : 'Activity name'}
                 <input
+                  ref={nameRef}
+                  autoFocus
+                  list="entry-name-suggestions"
                   value={draft.name}
-                  onChange={(e) => set('name', e.target.value)}
+                  onChange={(e) => {
+                    set('name', e.target.value)
+                    setNotice('')
+                  }}
                   placeholder={
                     draft.kind === 'scratch'
                       ? 'e.g. Golden Ticket'
@@ -577,71 +669,137 @@ function EntryDialog({
                   maxLength={100}
                 />
               </label>
-              <label>
-                Amount {draft.kind === 'scratch' ? 'per ticket' : 'wagered'}
-                <span className="money-input">
-                  <b>$</b>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1000000000"
-                    step="0.01"
-                    value={
-                      draft.kind === 'scratch'
-                        ? draft.spent_cents / draft.quantity / 100 || ''
-                        : draft.spent_cents / 100 || ''
-                    }
-                    onChange={(e) =>
-                      set(
-                        'spent_cents',
-                        cents(e.target.value) * (draft.kind === 'scratch' ? draft.quantity : 1),
-                      )
-                    }
-                    required
-                  />
-                </span>
-              </label>
-              <label>
-                Gross payout (if any)
-                <span className="money-input">
-                  <b>$</b>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1000000000"
-                    step="0.01"
-                    value={draft.payout_cents / 100 || ''}
-                    onChange={(e) => set('payout_cents', cents(e.target.value))}
-                    placeholder="0.00"
-                  />
-                </span>
-              </label>
-              <label>
-                Date
-                <input
-                  type="date"
-                  value={draft.occurred_on}
-                  max={today()}
-                  onChange={(e) => set('occurred_on', e.target.value)}
-                  required
-                />
-              </label>
               {draft.kind === 'scratch' && (
                 <label>
-                  Number purchased
+                  Date
                   <input
-                    type="number"
-                    min="1"
-                    max="100000"
-                    value={draft.quantity}
-                    onChange={(e) => {
-                      const q = Math.max(1, Number(e.target.value))
-                      setDraft((d) => ({
-                        ...d,
-                        quantity: q,
-                        spent_cents: Math.round(d.spent_cents / d.quantity) * q,
-                      }))
-                    }}
+                    type="date"
+                    value={draft.occurred_on}
+                    max={today()}
+                    onChange={(e) => set('occurred_on', e.target.value)}
+                    required
+                  />
+                </label>
+              )}
+              <datalist id="entry-name-suggestions">
+                {[...new Set(suggestions.filter((a) => a.kind === draft.kind).map((a) => a.name))].map(
+                  (name) => (
+                    <option value={name} key={name} />
+                  ),
+                )}
+              </datalist>
+              {draft.kind === 'scratch' && (
+                <fieldset className="ticket-outcome span-2">
+                  <legend>Ticket result</legend>
+                  <div>
+                    <button
+                      type="button"
+                      className={payoutMode === 'none' ? 'selected' : ''}
+                      aria-pressed={payoutMode === 'none'}
+                      onClick={() => {
+                        setPayoutMode('none')
+                        set('payout_cents', 0)
+                      }}
+                    >
+                      <CircleMinus size={17} />
+                      <span>
+                        No prize<small>$0 returned</small>
+                      </span>
+                      {payoutMode === 'none' && <Check size={15} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={payoutMode === 'payout' ? 'selected' : ''}
+                      aria-pressed={payoutMode === 'payout'}
+                      onClick={() => setPayoutMode('payout')}
+                    >
+                      <Coins size={17} />
+                      <span>
+                        Payout received<small>Enter the total prize</small>
+                      </span>
+                      {payoutMode === 'payout' && <Check size={15} />}
+                    </button>
+                  </div>
+                </fieldset>
+              )}
+              <div className="cost-field">
+                <div className="cost-with-quantity">
+                  <label>
+                    Amount {draft.kind === 'scratch' ? 'per ticket' : 'wagered'}
+                    <MoneyInput
+                      label={draft.kind === 'scratch' ? 'Price per ticket' : 'Amount wagered'}
+                      value={
+                        draft.kind === 'scratch'
+                          ? Math.round(draft.spent_cents / draft.quantity)
+                          : draft.spent_cents
+                      }
+                      onChange={(value) =>
+                        set('spent_cents', value * (draft.kind === 'scratch' ? draft.quantity : 1))
+                      }
+                      required
+                    />
+                  </label>
+                  {draft.kind === 'scratch' && (
+                    <label>
+                      Tickets
+                      <input
+                        aria-label="Number purchased"
+                        type="number"
+                        min="1"
+                        max="100000"
+                        value={draft.quantity}
+                        onChange={(e) => {
+                          const q = Math.max(1, Number(e.target.value))
+                          setDraft((d) => ({
+                            ...d,
+                            quantity: q,
+                            spent_cents: Math.round(d.spent_cents / d.quantity) * q,
+                          }))
+                        }}
+                        required
+                      />
+                    </label>
+                  )}
+                </div>
+                {draft.kind === 'scratch' && (
+                  <span className="price-shortcuts">
+                    {[1, 2, 5, 10, 20, 30].map((price) => (
+                      <button
+                        type="button"
+                        key={price}
+                        className={draft.spent_cents / draft.quantity === price * 100 ? 'selected' : ''}
+                        onClick={() => set('spent_cents', price * 100 * draft.quantity)}
+                      >
+                        ${price}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </div>
+              <label>
+                {draft.kind === 'scratch' ? 'Total prize' : 'Gross payout (if any)'}
+                <MoneyInput
+                  label="Gross payout"
+                  value={draft.payout_cents}
+                  onChange={(value) => set('payout_cents', value)}
+                  disabled={draft.kind === 'scratch' && payoutMode === 'none'}
+                />
+                <small>
+                  {draft.kind === 'scratch'
+                    ? payoutMode === 'none'
+                      ? 'No prize. Recorded as $0.'
+                      : 'Total returned for all tickets in this entry.'
+                    : 'Total amount received, including returned stakes.'}
+                </small>
+              </label>
+              {draft.kind !== 'scratch' && (
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={draft.occurred_on}
+                    max={today()}
+                    onChange={(e) => set('occurred_on', e.target.value)}
                     required
                   />
                 </label>
@@ -677,16 +835,11 @@ function EntryDialog({
                 </label>
                 <label>
                   Fees
-                  <span className="money-input">
-                    <b>$</b>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draft.fees_cents / 100 || ''}
-                      onChange={(e) => set('fees_cents', cents(e.target.value))}
-                    />
-                  </span>
+                  <MoneyInput
+                    label="Fees"
+                    value={draft.fees_cents}
+                    onChange={(value) => set('fees_cents', value)}
+                  />
                 </label>
                 {draft.kind === 'game' && (
                   <label>
@@ -751,14 +904,33 @@ function EntryDialog({
                   ? 'Pending — excluded from realized totals'
                   : 'Calculated net result'}
               </span>
-              <Delta value={draft.payout_cents - draft.spent_cents - draft.fees_cents} />
+              <span className="entry-total-detail">
+                <small>
+                  {money(draft.spent_cents + draft.fees_cents)} cost · {money(draft.payout_cents)} returned
+                </small>
+                {draft.status === 'pending' ? (
+                  <span className="pending-result">—</span>
+                ) : (
+                  <Delta value={draft.payout_cents - draft.spent_cents - draft.fees_cents} />
+                )}
+              </span>
             </div>
             {error && <div className="form-error">{error}</div>}
             <div className="dialog-actions">
               <Dialog.Close type="button" className="button ghost">
                 Cancel
               </Dialog.Close>
-              <button type="submit" className="button primary" disabled={busy}>
+              {!initial && (
+                <button
+                  type="submit"
+                  value="another"
+                  className="button secondary save-another"
+                  disabled={busy}
+                >
+                  Save + add another
+                </button>
+              )}
+              <button type="submit" value="save" className="button primary" disabled={busy}>
                 {busy ? 'Saving…' : initial ? 'Save changes' : 'Add to ledger'}
                 <ArrowRight size={16} />
               </button>
@@ -779,9 +951,13 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
-  const [page, setPage] = useState<Page>('overview')
+  const [page, setPage] = useState<Page>(
+    () => nav.find((n) => `#${n.id}` === location.hash)?.id || 'overview',
+  )
+  const [searchRequested, setSearchRequested] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => matchMedia('(max-width: 650px)').matches)
   const [entryOpen, setEntryOpen] = useState(false)
   const [editing, setEditing] = useState<Activity | null>(null)
   const [entryKind, setEntryKind] = useState<Kind>('scratch')
@@ -793,6 +969,19 @@ function App() {
   const [filterKind, setFilterKind] = useState<'all' | Kind>('all')
   const [gameFilter, setGameFilter] = useState('all')
   const [pageNumber, setPageNumber] = useState(1)
+
+  useEffect(() => {
+    const query = matchMedia('(max-width: 650px)')
+    const update = () => {
+      setIsMobile(query.matches)
+      if (!query.matches) setMobileOpen(false)
+    }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  useEffect(() => {
+    if (mobileOpen) document.getElementById('mobile-close')?.focus()
+  }, [mobileOpen])
 
   useEffect(() => {
     if (!supabase) {
@@ -824,17 +1013,43 @@ function App() {
     if (!supabase || !user) return
     let cancelled = false
     setLoading(true)
-    Promise.all([
-      supabase.from('activities').select('*').order('occurred_on', { ascending: false }),
-      supabase.from('user_settings').select('*').maybeSingle(),
-    ]).then(([a, s]) => {
-      if (cancelled) return
-      if (a.error) setError(a.error.message)
-      else setItems(a.data as Activity[])
-      if (!s.error && s.data)
-        setLimits({ weekly_cents: s.data.weekly_cents, monthly_cents: s.data.monthly_cents })
-      setLoading(false)
-    })
+    setItems([])
+    setLimits({ weekly_cents: null, monthly_cents: null })
+    const client = supabase
+    async function load() {
+      try {
+        const records: Activity[] = []
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await client
+            .from('activities')
+            .select('*')
+            .eq('user_id', user!.id)
+            .order('occurred_on', { ascending: false })
+            .order('id', { ascending: false })
+            .range(offset, offset + 999)
+          if (error) throw error
+          if (cancelled) return
+          records.push(...(data as Activity[]))
+          if (data.length < 1000) break
+        }
+        const settings = await client.from('user_settings').select('*').eq('user_id', user!.id).maybeSingle()
+        if (settings.error) throw settings.error
+        if (cancelled) return
+        setItems(records)
+        if (settings.data)
+          setLimits({ weekly_cents: settings.data.weekly_cents, monthly_cents: settings.data.monthly_cents })
+      } catch (error) {
+        if (!cancelled)
+          setError(
+            error instanceof Error
+              ? error.message
+              : 'Your records could not be loaded. Refresh to try again.',
+          )
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
     return () => {
       cancelled = true
     }
@@ -858,10 +1073,10 @@ function App() {
             (period === 'custom'
               ? (!customStart || a.occurred_on >= customStart) && (!customEnd || a.occurred_on <= customEnd)
               : a.occurred_on >= periodStart(period))) &&
-          (filterKind === 'all' || a.kind === filterKind) &&
-          (gameFilter === 'all' || a.kind !== 'game' || a.name === gameFilter),
+          (page !== 'history' || filterKind === 'all' || a.kind === filterKind) &&
+          (page !== 'game' || gameFilter === 'all' || a.kind !== 'game' || a.name === gameFilter),
       ),
-    [items, period, customStart, customEnd, filterKind, gameFilter],
+    [items, period, customStart, customEnd, filterKind, gameFilter, page],
   )
   const summary = totals(filtered)
   const allSummary = totals(items)
@@ -881,11 +1096,64 @@ function App() {
   }
   const go = (p: Page) => {
     setPage(p)
+    if (location.hash !== `#${p}`) location.hash = p
     setMobileOpen(false)
     setSearch('')
     setPageNumber(1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const openSearch = () => {
+    go('history')
+    setPeriod('all')
+    setFilterKind('all')
+    setSearchRequested(true)
+  }
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = nav.find((n) => `#${n.id}` === location.hash)?.id
+      if (next) {
+        setPage(next)
+        setMobileOpen(false)
+      }
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  useEffect(() => {
+    if (searchRequested && page === 'history' && !loading) {
+      document.getElementById('history-search')?.focus()
+      setSearchRequested(false)
+    }
+  }, [page, searchRequested, loading])
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && mobileOpen) {
+        setMobileOpen(false)
+        requestAnimationFrame(() => document.getElementById('mobile-menu-toggle')?.focus())
+        return
+      }
+      const target = event.target as HTMLElement
+      if (
+        (cloudEnabled && !user) ||
+        entryOpen ||
+        target.closest('input, textarea, select, [contenteditable="true"]') ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      )
+        return
+      if (event.key === 'n' || event.key === 'N') {
+        event.preventDefault()
+        openAdd(page === 'game' ? 'game' : page === 'other' ? 'other' : 'scratch')
+      }
+      if (event.key === '/') {
+        event.preventDefault()
+        openSearch()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [page, entryOpen, user, mobileOpen])
   async function save(draft: Draft, id?: string, file?: File) {
     let image_path = draft.image_path
     if (file) {
@@ -953,7 +1221,12 @@ function App() {
     setToast('CSV export downloaded')
   }
   async function deleteAll() {
-    if (!confirm('Delete all PlayLedger activity, ticket images, and spending limits? Your shared login will remain available. This cannot be undone.')) return
+    if (
+      !confirm(
+        'Delete all PlayLedger activity, ticket images, and spending limits? Your shared login will remain available. This cannot be undone.',
+      )
+    )
+      return
     try {
       if (supabase && user) {
         while (true) {
@@ -997,9 +1270,13 @@ function App() {
   const pageInfo = sectionCopy[page]
   return (
     <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
-      <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
+      <aside
+        className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}
+        inert={isMobile && !mobileOpen}
+        aria-hidden={isMobile && !mobileOpen}
+      >
         <div className="sidebar-top">
-          <Brand compact={collapsed} />
+          <Brand compact={collapsed && !isMobile} />
           <button
             className="sidebar-collapse icon-button"
             onClick={() => setCollapsed(!collapsed)}
@@ -1009,6 +1286,7 @@ function App() {
           </button>
           <button
             className="mobile-close icon-button"
+            id="mobile-close"
             onClick={() => setMobileOpen(false)}
             aria-label="Close menu"
           >
@@ -1020,7 +1298,7 @@ function App() {
           {(['workspace', 'manage'] as const).map((section) => (
             <div className="nav-group" key={section}>
               <span className="nav-label">
-                {section === 'workspace' ? 'WORKSPACE' : 'INSIGHTS & CONTROL'}
+                {section === 'workspace' ? 'YOUR LEDGER' : 'INSIGHTS & SETTINGS'}
               </span>
               {nav
                 .filter((n) => n.section === section)
@@ -1030,6 +1308,7 @@ function App() {
                     className={`nav-item ${page === n.id ? 'active' : ''}`}
                     onClick={() => go(n.id)}
                     title={n.label}
+                    aria-current={page === n.id ? 'page' : undefined}
                   >
                     <n.icon size={18} strokeWidth={1.8} />
                     <span>{n.label}</span>
@@ -1057,21 +1336,29 @@ function App() {
       {mobileOpen && (
         <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
       )}
-      <div className="main-shell">
+      <div className="main-shell" inert={isMobile && mobileOpen}>
         <header className="topbar">
           <div className="topbar-left">
             <button
               className="mobile-menu icon-button"
+              id="mobile-menu-toggle"
+              aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
             >
               <Menu size={20} />
             </button>
             <span className="breadcrumb">
-              Workspace <ChevronRight size={14} /> <b>{pageInfo.title}</b>
+              <span className="breadcrumb-parent">My workspace</span> <ChevronRight size={14} />{' '}
+              <b>{nav.find((n) => n.id === page)?.label}</b>
             </span>
           </div>
           <div className="topbar-right">
+            <button className="topbar-search" onClick={openSearch} aria-label="Search your ledger">
+              <Search size={16} />
+              <span>Search your ledger</span>
+              <kbd>/</kbd>
+            </button>
             {!cloudEnabled && (
               <span className="preview-badge">
                 <span /> LOCAL PREVIEW
@@ -1082,7 +1369,8 @@ function App() {
               aria-label="Add activity"
               onClick={() => openAdd(page === 'game' ? 'game' : page === 'other' ? 'other' : 'scratch')}
             >
-              <Plus size={17} /> <span>Add activity</span>
+              <Plus size={17} /> <span>New record</span>
+              <kbd>N</kbd>
             </button>
             <button
               className="top-avatar"
@@ -1098,16 +1386,40 @@ function App() {
           <div className="page-heading">
             <div>
               <span className="eyebrow">{pageInfo.eyebrow}</span>
-              <h1>
-                {pageInfo.title}
-                <span className="heading-dot">.</span>
-              </h1>
+              <h1>{pageInfo.title}</h1>
               <p>{pageInfo.description}</p>
             </div>
             {page !== 'settings' && page !== 'limits' && (
               <div className="heading-actions">
+                <div className="period-tabs" role="group" aria-label="Date range shortcuts">
+                  {(
+                    [
+                      ['week', 'Week'],
+                      ['month', 'Month'],
+                      ['year', 'Year'],
+                      ['all', 'All time'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={period === value ? 'active' : ''}
+                      aria-pressed={period === value}
+                      onClick={() => setPeriod(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    className={period === 'custom' ? 'active custom-tab' : 'custom-tab'}
+                    onClick={() => setPeriod('custom')}
+                    aria-label="Choose custom dates"
+                    aria-pressed={period === 'custom'}
+                  >
+                    <CalendarDays size={16} />
+                  </button>
+                </div>
                 <select
-                  className="period-select"
+                  className="period-select mobile-period"
                   value={period}
                   onChange={(e) => setPeriod(e.target.value as Period)}
                   aria-label="Date range"
@@ -1123,6 +1435,7 @@ function App() {
                     <input
                       type="date"
                       value={customStart}
+                      max={customEnd || today()}
                       onChange={(e) => setCustomStart(e.target.value)}
                       aria-label="Start date"
                     />
@@ -1130,6 +1443,8 @@ function App() {
                     <input
                       type="date"
                       value={customEnd}
+                      min={customStart}
+                      max={today()}
                       onChange={(e) => setCustomEnd(e.target.value)}
                       aria-label="End date"
                     />
@@ -1160,7 +1475,9 @@ function App() {
                   items={filtered}
                   allItems={items}
                   summary={summary}
-                  recent={last.slice(0, 5)}
+                  recent={last.slice(0, 6)}
+                  limits={limits}
+                  comparison={previousComparableRange(period, customStart, customEnd)}
                   onAdd={openAdd}
                   onGo={go}
                   onEdit={openEdit}
@@ -1168,6 +1485,7 @@ function App() {
               )}
               {(page === 'scratch' || page === 'game' || page === 'other') && (
                 <CategoryPage
+                  key={page}
                   kind={page}
                   items={category(page)}
                   allItems={items.filter((a) => a.kind === page)}
@@ -1223,10 +1541,11 @@ function App() {
         onOpenChange={setEntryOpen}
         initial={editing}
         defaultKind={entryKind}
+        suggestions={items}
         onSave={save}
       />
       {toast && (
-        <div className="toast">
+        <div className="toast" role="status">
           <Check size={17} />
           {toast}
         </div>
@@ -1240,6 +1559,8 @@ function Overview({
   allItems,
   summary,
   recent,
+  limits,
+  comparison,
   onAdd,
   onGo,
   onEdit,
@@ -1248,219 +1569,252 @@ function Overview({
   allItems: Activity[]
   summary: ReturnType<typeof totals>
   recent: Activity[]
+  limits: Limits
+  comparison: ReturnType<typeof previousComparableRange>
   onAdd: (k: Kind) => void
   onGo: (p: Page) => void
   onEdit: (a: Activity) => void
 }) {
-  const now = new Date()
-  const thisMonth = allItems.filter((a) => a.occurred_on >= periodStart('month'))
-  const previousMonthStart = localDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
-  const previousMonth = allItems.filter(
-    (a) => a.occurred_on >= previousMonthStart && a.occurred_on < periodStart('month'),
-  )
-  const monthSpent = totals(thisMonth).spent
-  const previousSpent = totals(previousMonth).spent
-  const highestKind = (['scratch', 'game', 'other'] as Kind[])
-    .map((k) => ({ kind: k, total: totals(thisMonth.filter((a) => a.kind === k)).spent }))
-    .sort((a, b) => b.total - a.total)[0]
-  const largest = [...items]
-    .filter(realized)
-    .sort((a, b) => b.spent_cents + b.fees_cents - (a.spent_cents + a.fees_cents))[0]
+  const selectedSpend = spending(items)
+  const pending = items.filter((a) => a.status === 'pending')
+  const previous = comparison
+    ? allItems.filter((a) => a.occurred_on >= comparison.start && a.occurred_on <= comparison.end)
+    : []
+  const change = summary.net - totals(previous).net
+  const month = new Date().toLocaleDateString('en-US', { month: 'long' })
+  const monthItems = allItems.filter((a) => a.occurred_on >= periodStart('month'))
+  const monthSpend = spending(monthItems)
+  const budget = limits.monthly_cents
+  const ratio = budget ? Math.min(100, (monthSpend / budget) * 100) : 0
+  const overBudget = budget !== null && monthSpend > budget
+  const mix = (['scratch', 'game', 'other'] as Kind[]).map((kind) => {
+    const entries = items.filter((a) => a.kind === kind)
+    return { kind, entries, cost: spending(entries), net: totals(entries).net }
+  })
   return (
-    <>
-      <div className="hero-panel">
-        <div className="hero-topline">
+    <div className="dashboard-grid">
+      <section className="surface result-panel">
+        <div className="result-topline">
           <span>
-            <i className="live-dot" /> FINANCIAL SNAPSHOT
+            <i /> RESULTS AT A GLANCE
           </span>
-          <span className="hero-index">01 / OVERVIEW</span>
+          <span className="record-count">
+            {items.length} {items.length === 1 ? 'record' : 'records'}
+          </span>
         </div>
-        <div className="hero-main">
-          <div className="hero-primary">
-            <span className="field-label">NET RESULT</span>
-            <div className={`hero-number ${summary.net < 0 ? 'negative' : 'positive'}`}>
+        <div className="result-intro">
+          <div>
+            <span className="result-label">Your net result</span>
+            <div
+              className={`result-number ${summary.net < 0 ? 'negative' : summary.net > 0 ? 'positive' : ''}`}
+            >
               {signedMoney(summary.net)}
             </div>
-            <p>
-              {summary.count
-                ? `${summary.count} recorded ${summary.count === 1 ? 'activity' : 'activities'} in the selected period`
-                : 'No recorded activity in this period'}
-            </p>
-            <div className="hero-formula">
-              <span>GROSS PAYOUTS</span>
-              <b>{money(summary.payout)}</b>
-              <span>−</span>
-              <span>TOTAL COST</span>
-              <b>{money(summary.spent)}</b>
+            <div className="period-comparison">
+              {comparison && previous.length ? (
+                <>
+                  <span className={change < 0 ? 'negative' : change > 0 ? 'positive' : ''}>
+                    {change < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
+                    {signedMoney(change)}
+                  </span>
+                  <small>{comparison.label}</small>
+                </>
+              ) : (
+                <small>
+                  {summary.count
+                    ? 'Payouts received, less the cost of settled activity.'
+                    : 'A fresh start. Your first record will begin the picture.'}
+                </small>
+              )}
             </div>
           </div>
-          <div className="hero-metrics">
-            <Stat label="TOTAL SPENT" value={money(summary.spent)} note="Wagers and fees" />
-            <Stat label="GROSS PAYOUTS" value={money(summary.payout)} note="Settled returns" />
-            <Stat label="RETURN RATE" value={`${summary.returnRate.toFixed(1)}%`} note="Payouts ÷ cost" />
+          <div className="result-mark" aria-hidden="true">
+            <BarChart3 size={30} strokeWidth={1.3} />
           </div>
         </div>
-        <div className="hero-accent" />
-      </div>
-      <div className="overview-grid">
-        <section className="surface performance">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">THE TRAJECTORY</span>
-              <h2>Financial performance</h2>
-              <p>Cumulative net result from settled entries</p>
-            </div>
-            <span className="chart-legend">
-              <i /> Net result
-            </span>
-          </div>
-          <PerformanceChart items={items} />
-        </section>
-        <section className="surface insights">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">THE CONTEXT</span>
-              <h2>At a glance</h2>
-              <p>Small details worth knowing</p>
-            </div>
-            <Sparkles size={18} className="muted-icon" />
-          </div>
-          <div className="insight-list">
-            <div>
-              <span className="insight-icon">
-                <WalletCards size={17} />
-              </span>
-              <span>
-                <small>HIGHEST SPENDING CATEGORY THIS MONTH</small>
-                <strong>{highestKind.total ? kindMeta[highestKind.kind].label : 'No activity yet'}</strong>
-              </span>
-              <b>{highestKind.total ? money(highestKind.total) : '—'}</b>
-            </div>
-            <div>
-              <span className="insight-icon">
-                <ArrowDownRight size={17} />
-              </span>
-              <span>
-                <small>SPENDING VS. LAST MONTH</small>
-                <strong>
-                  {previousMonth.length
-                    ? `${monthSpent >= previousSpent ? 'Up' : 'Down'} ${money(Math.abs(monthSpent - previousSpent))}`
-                    : 'No previous month baseline'}
-                </strong>
-              </span>
-            </div>
-            <div>
-              <span className="insight-icon">
-                <ActivityIcon size={17} />
-              </span>
-              <span>
-                <small>LARGEST RECORDED COST</small>
-                <strong>{largest ? largest.name : 'No activity yet'}</strong>
-              </span>
-              <b>{largest ? money(largest.spent_cents + largest.fees_cents) : '—'}</b>
-            </div>
-            <div>
-              <span className="insight-icon">
-                <Goal size={17} />
-              </span>
-              <span>
-                <small>AVERAGE COST PER ACTIVITY</small>
-                <strong>
-                  {items.filter(realized).length
-                    ? money(summary.spent / items.filter(realized).length)
-                    : 'No activity yet'}
-                </strong>
-              </span>
-            </div>
-          </div>
-          <div className="insight-foot">
-            <CircleHelp size={14} /> These reflect your records, not future outcomes.
-          </div>
-        </section>
-      </div>
-      <div className="section-title-row">
-        <div>
-          <span className="eyebrow">YOUR CATEGORIES</span>
-          <h2>Where it all happens</h2>
+        <div className="result-metrics">
+          <Stat label="AMOUNT SPENT" value={money(selectedSpend)} />
+          <Stat label="PAYOUTS RECEIVED" value={money(summary.payout)} />
+          <Stat
+            label="SETTLED RETURN RATE"
+            value={summary.spent ? `${summary.returnRate.toFixed(1)}%` : '—'}
+          />
         </div>
-        <span className="quiet-caption">Three ways to keep an accurate record</span>
-      </div>
-      <div className="category-grid">
-        {(['scratch', 'game', 'other'] as Kind[]).map((k, i) => {
-          const t = totals(items.filter((a) => a.kind === k))
-          return (
-            <button className={`category-card ${kindMeta[k].className}`} key={k} onClick={() => onGo(k)}>
-              <div className="category-top">
-                <IconBubble kind={k} size="large" />
-                <span>0{i + 1} / 03</span>
-              </div>
-              <h3>{kindMeta[k].label}</h3>
-              <p>
-                {t.count} {t.count === 1 ? 'entry' : 'entries'} recorded
-              </p>
-              <div className="category-values">
-                <span>
-                  <small>SPENT</small>
-                  <b>{money(t.spent)}</b>
-                </span>
-                <span>
-                  <small>PAID OUT</small>
-                  <b>{money(t.payout)}</b>
-                </span>
-              </div>
-              <div className="category-bottom">
-                <Delta value={t.net} />
-                <ArrowUpRight size={18} />
-              </div>
-            </button>
-          )
-        })}
-      </div>
-      <section className="surface recent-surface">
+        <div className="result-chart">
+          <PerformanceChart items={items} height={242} />
+        </div>
+        <div className="result-foot">
+          <span>
+            <i /> Cumulative net result
+          </span>
+          <small>
+            {pending.length
+              ? `${pending.length} pending · ${money(spending(pending))} excluded from net & return rate`
+              : 'Settled activity · fees included'}
+          </small>
+        </div>
+      </section>
+
+      <section className="surface activity-mix">
         <div className="section-head">
           <div>
-            <span className="eyebrow">LATEST ENTRIES</span>
+            <h2>Where it went</h2>
+            <p>Spending across your activities</p>
+          </div>
+          <WalletCards size={18} className="muted-icon" />
+        </div>
+        <div className="mix-total">
+          {money(selectedSpend)}
+          <span>total recorded cost</span>
+        </div>
+        <div
+          className={`mix-stacked ${selectedSpend ? '' : 'empty'}`}
+          aria-label={selectedSpend ? 'Spending distribution' : 'No recorded spending'}
+        >
+          {mix.map((m) => (
+            <i
+              key={m.kind}
+              className={kindMeta[m.kind].className}
+              style={{ flexGrow: m.cost || (selectedSpend ? 0 : 1) }}
+            />
+          ))}
+        </div>
+        <div className="mix-list">
+          {mix.map((m) => (
+            <button key={m.kind} onClick={() => onGo(m.kind)} className="mix-row">
+              <IconBubble kind={m.kind} />
+              <span>
+                <strong>{kindMeta[m.kind].label}</strong>
+                <small>
+                  {m.entries.length} {m.entries.length === 1 ? 'record' : 'records'}
+                </small>
+              </span>
+              <span className="mix-amount">
+                <b>{money(m.cost)}</b>
+                <small>
+                  {selectedSpend ? `${Math.round((m.cost / selectedSpend) * 100)}%` : '0%'} of spending
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <button className="panel-link" onClick={() => onGo('analytics')}>
+          Explore your analytics <ArrowUpRight size={16} />
+        </button>
+      </section>
+
+      <section className="surface recent-surface">
+        <div className="section-head">
+          <div className="title-with-count">
             <h2>Recent activity</h2>
+            <span>{items.length}</span>
           </div>
           <button className="text-link" onClick={() => onGo('history')}>
-            View all activity <ArrowRight size={15} />
+            View ledger <ArrowRight size={15} />
           </button>
         </div>
         {recent.length ? (
           <div className="recent-list">
+            <div className="recent-labels">
+              <span>ACTIVITY</span>
+              <span>COST</span>
+              <span>PAYOUT</span>
+              <span>NET RESULT</span>
+            </div>
             {recent.map((a) => (
               <button key={a.id} className="recent-row" onClick={() => onEdit(a)}>
                 <IconBubble kind={a.kind} />
                 <span className="recent-name">
                   <strong>{a.name}</strong>
                   <small>
-                    {kindMeta[a.kind].label} <span>·</span> {prettyDate(a.occurred_on)}
+                    {prettyDate(a.occurred_on)} ·{' '}
+                    {a.kind === 'scratch'
+                      ? `${a.quantity} ${a.quantity === 1 ? 'ticket' : 'tickets'}`
+                      : kindMeta[a.kind].label}
                   </small>
                 </span>
+                <span className="recent-amount">{money(a.spent_cents + a.fees_cents)}</span>
                 <span className="recent-amount">
-                  <small>SPENT</small>
-                  {money(a.spent_cents + a.fees_cents)}
-                </span>
-                <span className="recent-amount">
-                  <small>PAID OUT</small>
                   {a.status === 'pending' ? 'Pending' : money(a.payout_cents)}
                 </span>
-                <Delta value={net(a)} />
-                <ChevronRight size={16} className="row-chevron" />
+                <ActivityResult activity={a} />
               </button>
             ))}
           </div>
         ) : (
           <Empty
-            icon={ActivityIcon}
-            title="Your ledger starts here"
-            body="Add your first activity to see your financial picture take shape."
-            action="Add an activity"
+            icon={Ticket}
+            title="Make your first entry"
+            body="A ticket that lost counts, too. Record what you spent and what came back."
+            action="Add your first activity"
             onAction={() => onAdd('scratch')}
           />
         )}
       </section>
-    </>
+
+      <section className="surface budget-overview">
+        <div className="section-head">
+          <div>
+            <h2>A little perspective</h2>
+            <p>{month}'s spending</p>
+          </div>
+          <Goal size={19} className="muted-icon" />
+        </div>
+        <div className="budget-visual">
+          <div
+            className={`budget-ring ${overBudget ? 'over' : ''}`}
+            style={{
+              background: `conic-gradient(${overBudget ? '#ed8e85' : '#c3e88d'} ${ratio}%, #30352f 0)`,
+            }}
+          >
+            <div>
+              {budget ? (
+                <>
+                  <strong>
+                    {Math.round((monthSpend / budget) * 100)}
+                    <small>%</small>
+                  </strong>
+                  <span>of your limit</span>
+                </>
+              ) : (
+                <Goal size={28} strokeWidth={1.2} />
+              )}
+            </div>
+          </div>
+          <div className="budget-amount">
+            <strong>{money(monthSpend)}</strong>
+            <span>{budget ? `of ${money(budget)} monthly limit` : 'spent this month'}</span>
+          </div>
+        </div>
+        <div className="budget-message">
+          <ShieldCheck size={17} />
+          <p>
+            {budget ? (
+              <>
+                <strong>
+                  {money(Math.abs(budget - monthSpend))} {overBudget ? 'over your limit' : 'remaining'}
+                </strong>
+                <span>Includes all wagers and fees this month.</span>
+              </>
+            ) : (
+              <>
+                <strong>Give your spending a boundary.</strong>
+                <span>Set a monthly limit to keep your budget in view.</span>
+              </>
+            )}
+          </p>
+        </div>
+        <button className="panel-link" onClick={() => onGo('limits')}>
+          {budget ? 'Manage spending limits' : 'Set a spending limit'}
+          <ArrowUpRight size={16} />
+        </button>
+      </section>
+      <div className="dashboard-note">
+        <LockKeyhole size={14} />
+        <span>Your private record. A clearer view of the money behind the play.</span>
+        <span>YOUR PLAY. YOUR NUMBERS.</span>
+      </div>
+    </div>
   )
 }
 
@@ -1487,64 +1841,58 @@ function CategoryPage({
 }) {
   const t = totals(items)
   const [query, setQuery] = useState('')
+  const [outcome, setOutcome] = useState('all')
+  const [view, setView] = useState<'cards' | 'list'>(kind === 'scratch' ? 'cards' : 'list')
+  const [recordPage, setRecordPage] = useState(1)
+  useEffect(() => setRecordPage(1), [query, outcome, items.map((a) => a.id).join(','), gameFilter])
   const [order, setOrder] = useState('newest')
   const names = [...new Set(allItems.map((a) => a.name))].sort()
   const visible = [...items]
     .filter(
       (a) =>
         (kind !== 'game' || gameFilter === 'all' || a.name === gameFilter) &&
+        (outcome === 'all' || (outcome === 'none' ? a.payout_cents === 0 : a.payout_cents > 0)) &&
         `${a.name} ${a.category} ${a.location}`.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) =>
       order === 'name'
         ? a.name.localeCompare(b.name)
         : order === 'spent'
-          ? b.spent_cents - a.spent_cents
+          ? b.spent_cents + b.fees_cents - a.spent_cents - a.fees_cents
           : b.occurred_on.localeCompare(a.occurred_on),
     )
-  const grouped = names
-    .map((name) => ({ name, entries: allItems.filter((a) => a.name === name) }))
+  const pages = Math.max(1, Math.ceil(visible.length / 12))
+  const currentPage = Math.min(recordPage, pages)
+  const shown = visible.slice((currentPage - 1) * 12, currentPage * 12)
+  const grouped = [...new Set(items.map((a) => a.name))]
+    .map((name) => ({ name, entries: items.filter((a) => a.name === name) }))
     .sort((a, b) => totals(b.entries).spent - totals(a.entries).spent)
   return (
     <>
-      <div className={`category-banner ${kindMeta[kind].className}`}>
+      <div className={`category-quickbar ${kindMeta[kind].className}`}>
         <div>
-          <IconBubble kind={kind} size="large" />
-          <span className="eyebrow">
-            {kind === 'scratch'
-              ? 'EVERY TICKET COUNTS'
-              : kind === 'game'
-                ? 'EVERY SESSION IN CONTEXT'
-                : 'THE REST OF THE PICTURE'}
+          <IconBubble kind={kind} />
+          <span>
+            <strong>
+              {kind === 'scratch'
+                ? 'Every ticket has a place here.'
+                : kind === 'game'
+                  ? 'Keep the details of each session.'
+                  : 'Keep an accurate record of every wager.'}
+            </strong>
+            <small>
+              {kind === 'scratch'
+                ? 'Prize or no prize, record it in a few seconds.'
+                : kind === 'game'
+                  ? 'Buy-ins, payouts, fees, and time. Together.'
+                  : 'Separate settled results from pending activity.'}
+            </small>
           </span>
-          <h2>
-            {kind === 'scratch'
-              ? 'Know the cost behind every ticket.'
-              : kind === 'game'
-                ? 'See each game for what it is.'
-                : 'Every activity deserves a clear record.'}
-          </h2>
-          <p>
-            {kind === 'scratch'
-              ? 'A considered record of purchases and prizes, with no guessed odds.'
-              : kind === 'game'
-                ? 'Compare sessions and understand the totals for each game.'
-                : 'Record settled results separately from activities still pending.'}
-          </p>
-          <button className="button primary" onClick={() => onAdd(kind)}>
-            <Plus size={16} />{' '}
-            {kind === 'scratch' ? 'Add tickets' : kind === 'game' ? 'Log session' : 'Add activity'}
-          </button>
         </div>
-        <div className="banner-symbol">
-          {kind === 'scratch' ? (
-            <Ticket size={180} strokeWidth={0.7} />
-          ) : kind === 'game' ? (
-            <Gamepad2 size={180} strokeWidth={0.7} />
-          ) : (
-            <WalletCards size={180} strokeWidth={0.7} />
-          )}
-        </div>
+        <Button onClick={() => onAdd(kind)}>
+          <Plus size={16} />
+          {kind === 'scratch' ? 'Record tickets' : kind === 'game' ? 'Log a session' : 'Add activity'}
+        </Button>
       </div>
       <div className="metric-strip">
         <Stat
@@ -1556,12 +1904,16 @@ function CategoryPage({
               : undefined
           }
         />
-        <Stat label="TOTAL COST" value={money(t.spent)} />
+        <Stat label="AMOUNT SPENT" value={money(spending(items))} />
         <Stat label="GROSS PAYOUTS" value={money(t.payout)} />
-        <Stat label="NET RESULT" value={signedMoney(t.net)} tone={t.net < 0 ? 'negative' : 'positive'} />
+        <Stat
+          label="NET RESULT"
+          value={signedMoney(t.net)}
+          tone={t.net < 0 ? 'negative' : t.net > 0 ? 'positive' : 'neutral'}
+        />
         {kind === 'scratch' && (
           <Stat
-            label="WINNING PURCHASES"
+            label="PURCHASES WITH A PRIZE"
             value={String(items.filter((a) => a.status === 'settled' && a.payout_cents > 0).length)}
             note={`${items.filter((a) => a.status === 'settled' && a.payout_cents === 0).length} without a prize`}
           />
@@ -1597,6 +1949,131 @@ function CategoryPage({
           </div>
         </section>
       )}
+      <section className="surface record-section">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow">ALL RECORDS</span>
+            <h2>
+              {kind === 'scratch'
+                ? 'Ticket history'
+                : kind === 'game'
+                  ? 'Session history'
+                  : 'Activity records'}
+            </h2>
+          </div>
+          <div className="table-tools">
+            <label className="search-box">
+              <Search size={16} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search records"
+                aria-label="Search records"
+              />
+            </label>
+            <select
+              value={order}
+              onChange={(e) => {
+                setOrder(e.target.value)
+                setRecordPage(1)
+              }}
+              aria-label="Sort records"
+            >
+              <option value="newest">Newest first</option>
+              <option value="name">Name A–Z</option>
+              <option value="spent">Highest cost</option>
+            </select>
+          </div>
+        </div>
+        {kind === 'scratch' && (
+          <div className="record-controls">
+            <div className="outcome-filters" role="group" aria-label="Ticket outcome filter">
+              {[
+                ['all', 'All tickets'],
+                ['none', 'No prize'],
+                ['payout', 'Payout received'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  className={outcome === value ? 'active' : ''}
+                  aria-pressed={outcome === value}
+                  onClick={() => setOutcome(value)}
+                >
+                  {label}
+                  <span>
+                    {
+                      items.filter(
+                        (a) =>
+                          value === 'all' || (value === 'none' ? a.payout_cents === 0 : a.payout_cents > 0),
+                      ).length
+                    }
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="view-switch" role="group" aria-label="Record layout">
+              <button
+                aria-label="Card view"
+                aria-pressed={view === 'cards'}
+                className={view === 'cards' ? 'active' : ''}
+                onClick={() => setView('cards')}
+              >
+                <LayoutGrid size={16} />
+              </button>
+              <button
+                aria-label="Table view"
+                aria-pressed={view === 'list'}
+                className={view === 'list' ? 'active' : ''}
+                onClick={() => setView('list')}
+              >
+                <List size={17} />
+              </button>
+            </div>
+          </div>
+        )}
+        {visible.length ? (
+          <>
+            {view === 'cards' ? (
+              <TicketCards items={shown} onEdit={onEdit} onDelete={onDelete} />
+            ) : (
+              <ActivityTable items={shown} onEdit={onEdit} onSave={onSave} onDelete={onDelete} />
+            )}
+            <div className="pagination">
+              <span>
+                {visible.length} {visible.length === 1 ? 'record' : 'records'} · {currentPage} of {pages}
+              </span>
+              <div>
+                <button
+                  aria-label="Previous records"
+                  disabled={currentPage === 1}
+                  onClick={() => setRecordPage(currentPage - 1)}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  aria-label="Next records"
+                  disabled={currentPage === pages}
+                  onClick={() => setRecordPage(currentPage + 1)}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <Empty
+            icon={kindMeta[kind].icon}
+            title={query || outcome !== 'all' ? 'No matching records' : 'Your first record starts here'}
+            body={
+              query || outcome !== 'all'
+                ? 'Try a different search or outcome filter.'
+                : 'Add what you spent and what came back. A $0 payout is a complete record.'
+            }
+            action={!query && outcome === 'all' ? 'Add an entry' : undefined}
+            onAction={() => onAdd(kind)}
+          />
+        )}
+      </section>
       <div className="two-column">
         <section className="surface category-trend">
           <div className="section-head">
@@ -1608,7 +2085,7 @@ function CategoryPage({
               <p>Cumulative settled net result</p>
             </div>
           </div>
-          <PerformanceChart items={visible} height={230} />
+          <PerformanceChart items={items} height={230} />
         </section>
         <section className="surface category-detail">
           <div className="section-head">
@@ -1649,48 +2126,65 @@ function CategoryPage({
           )}
         </section>
       </div>
-      <section className="surface record-section">
-        <div className="section-head">
-          <div>
-            <span className="eyebrow">ALL RECORDS</span>
-            <h2>
-              {kind === 'scratch'
-                ? 'Ticket history'
-                : kind === 'game'
-                  ? 'Session history'
-                  : 'Activity records'}
-            </h2>
-          </div>
-          <div className="table-tools">
-            <label className="search-box">
-              <Search size={16} />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search records"
-                aria-label="Search records"
-              />
-            </label>
-            <select value={order} onChange={(e) => setOrder(e.target.value)} aria-label="Sort records">
-              <option value="newest">Newest first</option>
-              <option value="name">Name A–Z</option>
-              <option value="spent">Highest cost</option>
-            </select>
-          </div>
-        </div>
-        {visible.length ? (
-          <ActivityTable items={visible} onEdit={onEdit} onSave={onSave} onDelete={onDelete} />
-        ) : (
-          <Empty
-            icon={kindMeta[kind].icon}
-            title={query ? 'No matching records' : 'No records in this period'}
-            body={query ? 'Try a different search.' : 'Start with a quick entry to make your ledger useful.'}
-            action={!query ? 'Add an entry' : undefined}
-            onAction={() => onAdd(kind)}
-          />
-        )}
-      </section>
     </>
+  )
+}
+
+function TicketCards({
+  items,
+  onEdit,
+  onDelete,
+}: {
+  items: Activity[]
+  onEdit: (activity: Activity) => void
+  onDelete: (activity: Activity) => void
+}) {
+  return (
+    <div className="ticket-grid">
+      {items.map((a) => (
+        <article className="ticket-card" key={a.id}>
+          <div className="ticket-card-top">
+            <div className="ticket-denomination">
+              <Ticket size={21} strokeWidth={1.5} />
+              <span>
+                {money(a.spent_cents / a.quantity)}
+                <small>per ticket</small>
+              </span>
+            </div>
+            <Outcome activity={a} />
+          </div>
+          <button className="ticket-card-name" onClick={() => onEdit(a)}>
+            <h3>{a.name}</h3>
+            <span>
+              {prettyDate(a.occurred_on)} · {a.quantity} {a.quantity === 1 ? 'ticket' : 'tickets'}
+            </span>
+          </button>
+          <div className="ticket-card-values">
+            <span>
+              <small>TOTAL COST</small>
+              <b>{money(a.spent_cents + a.fees_cents)}</b>
+            </span>
+            <span>
+              <small>PAYOUT</small>
+              <b>{money(a.payout_cents)}</b>
+            </span>
+            <span>
+              <small>NET RESULT</small>
+              <ActivityResult activity={a} />
+            </span>
+          </div>
+          <div className="ticket-card-actions">
+            <span>{a.location || (a.notes ? 'Note attached' : 'Scratch-off')}</span>
+            <button onClick={() => onEdit(a)} aria-label={`Edit ${a.name}`}>
+              Edit record <ArrowUpRight size={14} />
+            </button>
+            <button className="delete-action" onClick={() => onDelete(a)} aria-label={`Delete ${a.name}`}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -1737,7 +2231,7 @@ function ActivityTable({
           <tr>
             <th>ACTIVITY</th>
             <th>DATE</th>
-            <th>STATUS</th>
+            <th>RESULT</th>
             <th className="numeric">COST</th>
             <th className="numeric">PAYOUT</th>
             <th className="numeric">NET</th>
@@ -1779,23 +2273,17 @@ function ActivityTable({
                   )}
                 </td>
                 <td className="numeric">
-                  <input
-                    aria-label="Wager amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={row.spent_cents / 100}
-                    onChange={(e) => set('spent_cents', cents(e.target.value))}
+                  <MoneyInput
+                    label="Wager amount"
+                    value={row.spent_cents}
+                    onChange={(value) => set('spent_cents', value)}
                   />
                 </td>
                 <td className="numeric">
-                  <input
-                    aria-label="Gross payout"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={row.payout_cents / 100}
-                    onChange={(e) => set('payout_cents', cents(e.target.value))}
+                  <MoneyInput
+                    label="Gross payout"
+                    value={row.payout_cents}
+                    onChange={(value) => set('payout_cents', value)}
                   />
                 </td>
                 <td className="numeric">
@@ -1835,12 +2323,12 @@ function ActivityTable({
                 </td>
                 <td>{prettyDate(a.occurred_on)}</td>
                 <td>
-                  <span className={`status ${a.status}`}>{a.status}</span>
+                  <Outcome activity={a} />
                 </td>
                 <td className="numeric">{money(a.spent_cents + a.fees_cents)}</td>
                 <td className="numeric">{a.status === 'settled' ? money(a.payout_cents) : '—'}</td>
                 <td className="numeric">
-                  <Delta value={net(a)} />
+                  <ActivityResult activity={a} />
                 </td>
                 <td>
                   <div className="row-actions">
@@ -1921,7 +2409,7 @@ function History({
         : sort === 'name'
           ? a.name.localeCompare(b.name)
           : sort === 'spend'
-            ? b.spent_cents - a.spent_cents
+            ? b.spent_cents + b.fees_cents - a.spent_cents - a.fees_cents
             : sort === 'net'
               ? net(b) - net(a)
               : b.occurred_on.localeCompare(a.occurred_on),
@@ -1952,6 +2440,7 @@ function History({
                 setSearch(e.target.value)
                 setPageNumber(1)
               }}
+              id="history-search"
               placeholder="Search activities, categories, notes…"
               aria-label="Search activities"
             />
@@ -2119,9 +2608,9 @@ function Analytics({
   })
   const sessions = items.filter((a) => a.kind === 'game' && realized(a))
   const distribution = [
-    { name: 'Loss', value: sessions.filter((a) => net(a) < 0).length, fill: '#f07882' },
+    { name: 'Loss', value: sessions.filter((a) => net(a) < 0).length, fill: '#ed948b' },
     { name: 'Even', value: sessions.filter((a) => net(a) === 0).length, fill: '#8694a5' },
-    { name: 'Gain', value: sessions.filter((a) => net(a) > 0).length, fill: '#55d6b1' },
+    { name: 'Gain', value: sessions.filter((a) => net(a) > 0).length, fill: '#c3e88d' },
   ]
   return (
     <>
@@ -2136,7 +2625,11 @@ function Analytics({
       ) : (
         <>
           <div className="analytics-summary">
-            <Stat label="NET RESULT" value={signedMoney(t.net)} tone={t.net < 0 ? 'negative' : 'positive'} />
+            <Stat
+              label="NET RESULT"
+              value={signedMoney(t.net)}
+              tone={t.net < 0 ? 'negative' : t.net > 0 ? 'positive' : 'neutral'}
+            />
             <Stat label="TOTAL COST" value={money(t.spent)} />
             <Stat label="GROSS PAYOUTS" value={money(t.payout)} />
             <Stat label="RETURN RATE" value={`${t.returnRate.toFixed(1)}%`} />
@@ -2163,11 +2656,11 @@ function Analytics({
               <div className="analytics-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={byKind} layout="vertical" margin={{ left: 20, right: 20 }}>
-                    <CartesianGrid stroke="#28333f" strokeDasharray="3 6" horizontal={false} />
+                    <CartesianGrid stroke="#33382f" strokeDasharray="3 6" horizontal={false} />
                     <XAxis
                       type="number"
                       tickFormatter={(v: number) => `$${Math.round(v / 100)}`}
-                      stroke="#7e8d9e"
+                      stroke="#89937f"
                       tickLine={false}
                       axisLine={false}
                       fontSize={11}
@@ -2183,7 +2676,7 @@ function Analytics({
                     />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="spent" name="Cost" fill="#697891" radius={[0, 3, 3, 0]} barSize={11} />
-                    <Bar dataKey="payout" name="Payout" fill="#55d6b1" radius={[0, 3, 3, 0]} barSize={11} />
+                    <Bar dataKey="payout" name="Payout" fill="#c3e88d" radius={[0, 3, 3, 0]} barSize={11} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -2207,18 +2700,18 @@ function Analytics({
               <div className="analytics-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={months} margin={{ left: -16, right: 8 }}>
-                    <CartesianGrid stroke="#28333f" strokeDasharray="3 6" vertical={false} />
-                    <XAxis dataKey="name" stroke="#7e8d9e" tickLine={false} axisLine={false} fontSize={11} />
+                    <CartesianGrid stroke="#33382f" strokeDasharray="3 6" vertical={false} />
+                    <XAxis dataKey="name" stroke="#89937f" tickLine={false} axisLine={false} fontSize={11} />
                     <YAxis
                       tickFormatter={(v: number) => `$${Math.round(v / 100)}`}
-                      stroke="#7e8d9e"
+                      stroke="#89937f"
                       tickLine={false}
                       axisLine={false}
                       fontSize={11}
                     />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="spent" name="Cost" fill="#697891" radius={[3, 3, 0, 0]} barSize={16} />
-                    <Line dataKey="payout" name="Payout" stroke="#55d6b1" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line dataKey="payout" name="Payout" stroke="#c3e88d" strokeWidth={2} dot={{ r: 3 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -2244,10 +2737,10 @@ function Analytics({
               <div className="analytics-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weekCounts} margin={{ left: -15, right: 8 }}>
-                    <CartesianGrid stroke="#28333f" strokeDasharray="3 6" vertical={false} />
+                    <CartesianGrid stroke="#33382f" strokeDasharray="3 6" vertical={false} />
                     <XAxis
                       dataKey="name"
-                      stroke="#7e8d9e"
+                      stroke="#89937f"
                       tickLine={false}
                       axisLine={false}
                       fontSize={10}
@@ -2255,7 +2748,7 @@ function Analytics({
                     />
                     <YAxis
                       tickFormatter={(v: number) => `$${Math.round(v / 100)}`}
-                      stroke="#7e8d9e"
+                      stroke="#89937f"
                       tickLine={false}
                       axisLine={false}
                       fontSize={11}
@@ -2278,7 +2771,7 @@ function Analytics({
                 <div className="distribution">
                   <ResponsiveContainer width="100%" height={195}>
                     <BarChart data={distribution} margin={{ left: -15, right: 12 }}>
-                      <CartesianGrid stroke="#28333f" strokeDasharray="3 6" vertical={false} />
+                      <CartesianGrid stroke="#33382f" strokeDasharray="3 6" vertical={false} />
                       <XAxis
                         dataKey="name"
                         stroke="#a6b1be"
@@ -2288,7 +2781,7 @@ function Analytics({
                       />
                       <YAxis
                         allowDecimals={false}
-                        stroke="#7e8d9e"
+                        stroke="#89937f"
                         tickLine={false}
                         axisLine={false}
                         fontSize={11}
@@ -2553,7 +3046,10 @@ function Settings({
         <div className="setting-row">
           <div>
             <strong>Delete PlayLedger data</strong>
-            <p>Permanently remove all records, ticket images, and spending limits. Your shared login stays available.</p>
+            <p>
+              Permanently remove all records, ticket images, and spending limits. Your shared login stays
+              available.
+            </p>
           </div>
           <Button variant="danger" onClick={onDeleteAll}>
             <Trash2 size={16} /> Delete data

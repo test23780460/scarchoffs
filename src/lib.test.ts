@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activitySchema, csv, cumulative, net, spending, totals } from './lib'
+import { activitySchema, cents, csv, cumulative, net, previousComparableRange, spending, totals } from './lib'
 import type { Activity } from './lib'
 
 const activity = (
@@ -40,6 +40,35 @@ describe('financial calculations', () => {
     const a = activity('a', 1000, 0)
     const b = { ...activity('b', 500, 1500), occurred_on: '2026-10-11' }
     expect(cumulative([a, b]).map((p) => p.balance)).toEqual([1000, 0])
+  })
+  it('uses one closing balance per day and excludes pending results from the chart', () => {
+    expect(
+      cumulative([
+        activity('a', 500, 0),
+        activity('b', 1000, 2000),
+        { ...activity('c', 900, 0, 0, 'pending'), kind: 'other' },
+      ]),
+    ).toEqual([{ date: '2026-10-12', balance: 500, name: 'Daily closing result' }])
+  })
+  it('compares month-to-date results without rolling a shorter month into the next month', () => {
+    expect(previousComparableRange('month', '', '', new Date(2026, 2, 31))).toMatchObject({
+      start: '2026-02-01',
+      end: '2026-02-28',
+    })
+  })
+  it('compares a custom range with an equally long preceding range', () => {
+    expect(previousComparableRange('custom', '2026-10-10', '2026-10-15')).toMatchObject({
+      start: '2026-10-04',
+      end: '2026-10-09',
+    })
+    expect(previousComparableRange('all')).toBeNull()
+    expect(previousComparableRange('custom', '2026-10-15', '2026-10-10')).toBeNull()
+  })
+  it('stores decimal input as cents including zero payouts', () => {
+    expect(cents('75.50')).toBe(7550)
+    expect(cents('2.25')).toBe(225)
+    expect(cents('')).toBe(0)
+    expect(activitySchema.safeParse({ ...activity('a', 500, 0), kind: 'scratch' }).success).toBe(true)
   })
   it('counts pending wagers toward spending boundaries', () => {
     expect(spending([activity('a', 1000, 0, 100, 'pending')])).toBe(1100)

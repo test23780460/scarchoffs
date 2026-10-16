@@ -101,10 +101,48 @@ export const periodStart = (period: string, now = new Date()) => {
 }
 export const cumulative = (items: Activity[]) => {
   let balance = 0
-  return [...items]
-    .filter(realized)
-    .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.id.localeCompare(b.id))
-    .map((a) => ({ date: a.occurred_on, balance: (balance += net(a)), name: a.name }))
+  const daily = new Map<string, number>()
+  for (const a of [...items].filter(realized).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))) {
+    balance += net(a)
+    daily.set(a.occurred_on, balance)
+  }
+  return [...daily].map(([date, balance]) => ({ date, balance, name: 'Daily closing result' }))
+}
+export const previousComparableRange = (period: string, start = '', end = '', now = new Date()) => {
+  const year = now.getFullYear(),
+    month = now.getMonth(),
+    day = now.getDate()
+  if (period === 'month') {
+    const lastDay = new Date(year, month, 0).getDate()
+    return {
+      start: localDate(new Date(year, month - 1, 1)),
+      end: localDate(new Date(year, month - 1, Math.min(day, lastDay))),
+      label: 'vs last month to date',
+    }
+  }
+  if (period === 'year') {
+    const lastDay = new Date(year - 1, month + 1, 0).getDate()
+    return {
+      start: localDate(new Date(year - 1, 0, 1)),
+      end: localDate(new Date(year - 1, month, Math.min(day, lastDay))),
+      label: 'vs last year to date',
+    }
+  }
+  if (period === 'week') {
+    const beginning = startOfWeek(now)
+    beginning.setDate(beginning.getDate() - 7)
+    const finish = new Date(year, month, day - 7)
+    return { start: localDate(beginning), end: localDate(finish), label: 'vs last week to date' }
+  }
+  if (period === 'custom' && start && end && start <= end) {
+    const duration = (Date.parse(end) - Date.parse(start)) / 86400000 + 1
+    const beginning = new Date(`${start}T12:00:00`)
+    const finish = new Date(beginning)
+    beginning.setDate(beginning.getDate() - duration)
+    finish.setDate(finish.getDate() - 1)
+    return { start: localDate(beginning), end: localDate(finish), label: 'vs previous period' }
+  }
+  return null
 }
 export const csv = (items: Activity[]) => {
   const columns: (keyof Activity)[] = [

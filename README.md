@@ -31,6 +31,12 @@ Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository Actions secre
 
 ## Checks
 
+The dashboard combines settled net results, daily closing balances, comparable prior periods, category spending, and the current monthly budget. Pending costs count toward spending limits but stay out of net results and return rates.
+
+Scratch-offs have card and table views with outcome filters. Choose **No prize** to record a losing ticket, use price shortcuts and quantities for purchases, or choose **Payout received** to enter the total prize. **Save + add another** keeps the form open for the next record. Existing activity names appear as suggestions.
+
+Use **N** to start a record and **/** to search the full ledger when you are outside a form field. Each page also has a direct URL, such as `#scratch`.
+
 ```bash
 npm test
 npm run build
